@@ -1,0 +1,8 @@
+language: go
+go: tip
+install:
+  - go get -v github.com/Mischanix/applog
+  - go get -v github.com/Mischanix/emission
+  - go get -v github.com/howeyc/fsnotify
+script:
+  - go test -v github.com/Mischanix/evconf
