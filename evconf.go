@@ -5,15 +5,16 @@ package evconf
 import (
   "encoding/json"
   "github.com/Mischanix/applog"
-  "github.com/Mischanix/emission"
   "github.com/howeyc/fsnotify"
   "os"
   "path/filepath"
+  "sync"
 )
 
 type Config struct {
   path    string
-  emitter *emission.Emitter
+  once    *sync.Once
+  onload  func()
   watcher *fsnotify.Watcher
   data    interface{}
 }
@@ -25,16 +26,29 @@ func New(path string, data interface{}) (c *Config) {
   if err != nil {
     applog.Error("evconf.InitConfig: NewWatcher failed: %v", err)
   }
-  c = &Config{path, emission.NewEmitter(), w, data}
+  c = &Config{path, &sync.Once{}, nil, w, data}
 
-  c.emitter.Once("ready", func(...interface{}) {
-    c.loadConfig()
+  return c
+}
+
+// Only one OnLoad func may be bound per Config object.
+func (c *Config) OnLoad(fn func()) {
+  c.onload = fn
+}
+
+// Ready will only be called once in the lifetime of a Config object.
+func (c *Config) Ready() {
+  c.once.Do(func() {
+    // Always call loadConfig from a separate goroutine for consistency
+    go func() {
+      c.loadConfig()
+    }()
 
     go func() {
       for c.watcher != nil {
         select {
         case ev := <-c.watcher.Event:
-          if filepath.Base(ev.Name) == filepath.Base(path) && !ev.IsDelete() {
+          if filepath.Base(ev.Name) == filepath.Base(c.path) && !ev.IsDelete() {
             // Synchronous file operation to block up channels while we use it.
             c.loadConfig()
           }
@@ -44,23 +58,11 @@ func New(path string, data interface{}) (c *Config) {
       }
     }()
 
-    err = w.Watch(filepath.Dir(path))
+    err := c.watcher.Watch(filepath.Dir(c.path))
     if err != nil {
       applog.Error("evconf.ready: Watch failed: %v", err)
     }
   })
-
-  return c
-}
-
-func (c *Config) OnLoad(fn func()) {
-  c.emitter.On("load", func(...interface{}) {
-    fn()
-  })
-}
-
-func (c *Config) Ready() {
-  c.emitter.EmitSync("ready")
 }
 
 // StopWatching stops watching the config file for changes.  No further load
@@ -85,5 +87,7 @@ func (c *Config) loadConfig() {
 
   file.Close()
 
-  c.emitter.EmitSync("load")
+  if c.onload != nil {
+    c.onload()
+  }
 }

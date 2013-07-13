@@ -49,6 +49,9 @@ func TestEvconf(t *testing.T) {
 
   <-time.After(1 * time.Millisecond)
 
+  // should not increase numCalls
+  c.Ready()
+
   // Update config_test.json
   f, _ = os.Create("_config_test.json")
   f.WriteString("{\n  \"string_key\": \"I'm Cooler!\"\n}\n")
@@ -66,6 +69,23 @@ func TestEvconf(t *testing.T) {
   os.Rename("_config_test.json", "config_test.json")
 
   <-time.After(1 * time.Millisecond)
+
+  c.OnLoad(nil)
+  // Update config_test.json with nil OnLoad -- shouldn't panic/call the old one
+  f, _ = os.Create("_config_test.json")
+  f.WriteString("{\n  \"string_key\": \"I'm Coolest!\"\n}\n")
+  f.Close()
+  os.Remove("config_test.json")
+  os.Rename("_config_test.json", "config_test.json")
+
+  <-time.After(1 * time.Millisecond)
+
+  // But data should still be changed
+  if config.StringKey != "I'm Coolest!" {
+    t.Errorf("Expected StringKey to be \"I'm Coolest!\" at end, got %v",
+      config.StringKey)
+  }
+
   os.Remove("config_test.json")
   if numCalls != 3 {
     t.Errorf(
