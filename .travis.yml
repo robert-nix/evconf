@@ -1,5 +1,5 @@
 language: go
-go: tip
+go: 1.1.1
 install:
   - go get -v github.com/Mischanix/applog
   - go get -v github.com/howeyc/fsnotify
