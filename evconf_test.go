@@ -14,6 +14,18 @@ var config struct {
 // This isn't the most deterministic of tests because of I/O latency, but it's
 // a test nonetheless.
 func TestEvconf(t *testing.T) {
+  timeout := 1 * time.Second
+  finished := make(chan bool)
+  go func() {
+    for {
+      select {
+      case <-time.After(timeout):
+        applog.Panic("TestEvconf took longer than %v", timeout)
+      case <-finished:
+        return
+      }
+    }
+  }()
   // Log to stdout
   applog.SetOutput(os.Stdout)
   applog.Level = applog.DebugLevel
@@ -23,31 +35,22 @@ func TestEvconf(t *testing.T) {
   f.Close()
 
   c := New("config_test.json", &config)
+  loaded := make(chan bool)
   numCalls := 0
   c.OnLoad(func() {
     numCalls++
-    if numCalls == 1 && config.StringKey != "I'm Cool!" {
-      t.Errorf(
-        "OnLoad#1 expected \"I'm Cool!\", got %v",
-        config.StringKey,
-      )
-    }
-    if numCalls == 2 && config.StringKey != "I'm Cooler!" {
-      t.Errorf(
-        "OnLoad#2 expected \"I'm Cooler!\", got %v",
-        config.StringKey,
-      )
-    }
-    if numCalls == 3 && config.StringKey != "I'm Cooler!" {
-      t.Errorf(
-        "OnLoad#3 expected \"I'm Cooler!\", got %v",
-        config.StringKey,
-      )
-    }
+    loaded <- true
   })
   c.Ready()
 
-  <-time.After(1 * time.Millisecond)
+  <-loaded
+
+  if config.StringKey != "I'm Cool!" {
+    t.Errorf(
+      "OnLoad#1 expected \"I'm Cool!\", got %v",
+      config.StringKey,
+    )
+  }
 
   // should not increase numCalls
   c.Ready()
@@ -59,7 +62,14 @@ func TestEvconf(t *testing.T) {
   os.Remove("config_test.json")
   os.Rename("_config_test.json", "config_test.json")
 
-  <-time.After(1 * time.Millisecond)
+  <-loaded
+
+  if config.StringKey != "I'm Cooler!" {
+    t.Errorf(
+      "OnLoad#2 expected \"I'm Cooler!\", got %v",
+      config.StringKey,
+    )
+  }
 
   // Update config_test.json with invalid data -- don't overwrite valid configs
   f, _ = os.Create("_config_test.json")
@@ -68,21 +78,30 @@ func TestEvconf(t *testing.T) {
   os.Remove("config_test.json")
   os.Rename("_config_test.json", "config_test.json")
 
-  <-time.After(1 * time.Millisecond)
+  <-loaded
 
-  c.OnLoad(nil)
-  // Update config_test.json with nil OnLoad -- shouldn't panic/call the old one
+  if config.StringKey != "I'm Cooler!" {
+    t.Errorf(
+      "OnLoad#3 expected \"I'm Cooler!\", got %v",
+      config.StringKey,
+    )
+  }
+
+  // Update config_test.json with different OnLoad -- shouldn't call the old one
+  c.OnLoad(func() {
+    loaded <- true
+  })
   f, _ = os.Create("_config_test.json")
   f.WriteString("{\n  \"string_key\": \"I'm Coolest!\"\n}\n")
   f.Close()
   os.Remove("config_test.json")
   os.Rename("_config_test.json", "config_test.json")
 
-  <-time.After(1 * time.Millisecond)
+  <-loaded
 
   // But data should still be changed
   if config.StringKey != "I'm Coolest!" {
-    t.Errorf("Expected StringKey to be \"I'm Coolest!\" at end, got %v",
+    t.Errorf("load#4 expected StringKey to be \"I'm Coolest!\", got %v",
       config.StringKey)
   }
 
@@ -93,4 +112,5 @@ func TestEvconf(t *testing.T) {
       numCalls,
     )
   }
+  finished <- true
 }

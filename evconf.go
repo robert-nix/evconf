@@ -9,14 +9,16 @@ import (
   "os"
   "path/filepath"
   "sync"
+  "time"
 )
 
 type Config struct {
-  path    string
-  once    *sync.Once
-  onload  func()
-  watcher *fsnotify.Watcher
-  data    interface{}
+  path         string
+  once         *sync.Once
+  onload       func()
+  watcher      *fsnotify.Watcher
+  lastModified time.Time
+  data         interface{}
 }
 
 // New returns a new Config object.  Once a client has bound callbacks via
@@ -26,7 +28,7 @@ func New(path string, data interface{}) (c *Config) {
   if err != nil {
     applog.Error("evconf.InitConfig: NewWatcher failed: %v", err)
   }
-  c = &Config{path, &sync.Once{}, nil, w, data}
+  c = &Config{path, &sync.Once{}, nil, w, time.Time{}, data}
 
   return c
 }
@@ -50,7 +52,7 @@ func (c *Config) Ready() {
         case ev := <-c.watcher.Event:
           if filepath.Base(ev.Name) == filepath.Base(c.path) && !ev.IsDelete() {
             // Synchronous file operation to block up channels while we use it.
-            c.loadConfig()
+            c.onPathModified()
           }
         case err := <-c.watcher.Error:
           applog.Error("evconf.watcher: watcher.Error: %v", err)
@@ -69,6 +71,28 @@ func (c *Config) Ready() {
 // events will be emitted except by the ready event.
 func (c *Config) StopWatching() {
   c.watcher = nil
+}
+
+// onPathModified wraps loadConfig with a debouncer to help ensure an external
+// file write operation has completed on our config file before we parse it.
+func (c *Config) onPathModified() {
+  // Between 1ms and 100ms after the previous onPathModified call, call
+  // loadConfig.  Otherwise, wait 1ms to possibly call loadConfig.
+  interval := time.Now().Sub(c.lastModified)
+  minBounce := 1 * time.Millisecond
+  maxBounce := 100 * time.Millisecond
+  c.lastModified = time.Now()
+  if interval > minBounce && interval < maxBounce {
+    c.loadConfig()
+  } else {
+    go func() {
+      <-time.After(minBounce * 2)
+      waited := time.Now().Sub(c.lastModified)
+      if waited > minBounce && waited < maxBounce {
+        c.loadConfig()
+      }
+    }()
+  }
 }
 
 // loadConfig loads the config from path and emits a load event.
