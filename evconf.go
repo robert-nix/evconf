@@ -51,20 +51,18 @@ func (c *Config) Ready() {
       for {
         select {
         case ev := <-c.watcher.Event:
-          if ev != nil {
-            if filepath.Base(ev.Name) == filepath.Base(c.path) && !ev.IsDelete() {
-              // Synchronous file operation to block up channels while we use it.
-              c.onPathModified()
-            }
-          } else {
+          if ev == nil {
             return
+          }
+          if filepath.Base(ev.Name) == filepath.Base(c.path) && !ev.IsDelete() {
+            // Synchronous file operation to block up channels while we use it.
+            c.onPathModified()
           }
         case err := <-c.watcher.Error:
-          if err != nil {
-            applog.Error("evconf.watcher: watcher.Error: %v", err)
-          } else {
+          if err == nil {
             return
           }
+          applog.Error("evconf.watcher: watcher.Error: %v", err)
         }
       }
     }()
