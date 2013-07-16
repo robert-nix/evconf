@@ -108,16 +108,16 @@ func (c *Config) loadConfig() {
   file, err := os.Open(c.path)
   if err != nil {
     applog.Error("evconf.loadConfig: Open failed: %v", err)
-    return
   }
 
   d := json.NewDecoder(file)
   if err = d.Decode(c.data); err != nil {
     applog.Error("evconf.loadConfig: json Decode failed: %v", err)
-    return
   }
 
-  file.Close()
+  if file != nil {
+    file.Close()
+  }
 
   if c.onload != nil {
     c.onload()
