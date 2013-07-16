@@ -17,6 +17,7 @@ type Config struct {
   once         *sync.Once
   onload       func()
   watcher      *fsnotify.Watcher
+  closed       bool
   lastModified time.Time
   data         interface{}
 }
@@ -28,7 +29,7 @@ func New(path string, data interface{}) (c *Config) {
   if err != nil {
     applog.Error("evconf.InitConfig: NewWatcher failed: %v", err)
   }
-  c = &Config{path, &sync.Once{}, nil, w, time.Time{}, data}
+  c = &Config{path, &sync.Once{}, nil, w, false, time.Time{}, data}
 
   return c
 }
@@ -69,7 +70,7 @@ func (c *Config) Ready() {
     }()
 
     err := c.watcher.Watch(filepath.Dir(c.path))
-    if err != nil {
+    if err != nil && !c.closed {
       applog.Error("evconf.ready: Watch failed: %v", err)
     }
   })
@@ -78,6 +79,7 @@ func (c *Config) Ready() {
 // StopWatching stops watching the config file for changes.  No further load
 // events will be emitted except by the ready event.
 func (c *Config) StopWatching() {
+  c.closed = true
   c.watcher.Close()
 }
 
