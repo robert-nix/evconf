@@ -105,6 +105,16 @@ func TestEvconf(t *testing.T) {
       config.StringKey)
   }
 
+  // StopWatching test
+  c.StopWatching()
+  f, _ = os.Create("_config_test.json")
+  f.WriteString("{\n  \"string_key\": \"I'm Coolest!\"\n}\n")
+  f.Close()
+  os.Remove("config_test.json")
+  os.Rename("_config_test.json", "config_test.json")
+
+  <-time.After(1 * time.Millisecond)
+
   os.Remove("config_test.json")
   if numCalls != 3 {
     t.Errorf(

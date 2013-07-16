@@ -47,15 +47,23 @@ func (c *Config) Ready() {
     }()
 
     go func() {
-      for c.watcher != nil {
+      for {
         select {
         case ev := <-c.watcher.Event:
-          if filepath.Base(ev.Name) == filepath.Base(c.path) && !ev.IsDelete() {
-            // Synchronous file operation to block up channels while we use it.
-            c.onPathModified()
+          if ev != nil {
+            if filepath.Base(ev.Name) == filepath.Base(c.path) && !ev.IsDelete() {
+              // Synchronous file operation to block up channels while we use it.
+              c.onPathModified()
+            }
+          } else {
+            return
           }
         case err := <-c.watcher.Error:
-          applog.Error("evconf.watcher: watcher.Error: %v", err)
+          if err != nil {
+            applog.Error("evconf.watcher: watcher.Error: %v", err)
+          } else {
+            return
+          }
         }
       }
     }()
@@ -70,7 +78,7 @@ func (c *Config) Ready() {
 // StopWatching stops watching the config file for changes.  No further load
 // events will be emitted except by the ready event.
 func (c *Config) StopWatching() {
-  c.watcher = nil
+  c.watcher.Close()
 }
 
 // onPathModified wraps loadConfig with a debouncer to help ensure an external
